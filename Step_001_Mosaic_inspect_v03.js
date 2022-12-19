@@ -1,0 +1,1150 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var imageVisParam = {"opacity":1,"bands":["swir1_median","nir_median","red_median"],"min":7752.78,"max":20366.22,"gamma":0.75},
+    imageVisParam2 = {"opacity":1,"bands":["swir1_median","nir_median","red_median"],"min":7818.6,"max":23639.4,"gamma":0.719};
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**
+ * @name mapbiomas-mosaic-toolkit-grids
+ *  
+ * @author
+ *  1. João Siqueira
+ *  2. Marcos Rosa
+ *  3. Mapbiomas Team
+ *  4. Juliano Schirmbeck / Santiago Banchero
+ * 
+ * @version
+ *  1.0.0 | 2020-02-04 | First release.
+ *  1.1.0 | 2020-05-08 | Update thumbnails and improve mosaic logic.
+ *  1.1.1 | 2021-02-01 | Fix minor bugs.
+ *  1.1.2 | 2021-02-11 | Use grids.
+ *  1.1.3
+ *  1.1.4 |2022-02-18| atualizadas areas Chaco, PampaTri, AFTri
+ *                      mascara de nuvens somente com bitquality
+ *                      não aplica marcara da regiao
+ *                      efetua buffer de -5000 por carta
+ */
+var bns = require('users/schirmbeckj/PampaTriNacional:Colecion_02/util/BandNames_v02.js');
+var csm = require('users/schirmbeckj/PampaTriNacional:Colecion_02/util/CloudAndShadowMasking_v02.js');
+var col = require('users/schirmbeckj/PampaTriNacional:Colecion_02/util/Collection_v02.js');
+var dtp = require('users/schirmbeckj/PampaTriNacional:Colecion_02/util/DataType_v02.js');
+var ind = require('users/mapbiomas/mapbiomas-mosaics:modules/SpectralIndexes.js');
+var mis = require('users/mapbiomas/mapbiomas-mosaics:modules/Miscellaneous.js');
+var mos = require('users/schirmbeckj/PampaTriNacional:Colecion_02/util/Mosaic_v02.js');
+var sma = require('users/mapbiomas/mapbiomas-mosaics:modules/SmaAndNdfi.js');
+
+var projectInfo = [
+    {
+        label: 'Atlantic Forest Trinacional Col 2',
+        value: {
+            projectName: 'mapbiomas-af-trinacional',
+            outputAsset: 'projects/mapbiomas_af_trinacional/MOSAICS/workspace-c2',
+            outputAssetBlackList: 'projects/mapbiomas_af_trinacional/MOSAICS/workspace-c2/BlackList',
+            regionsAsset: 'projects/mapbiomas_af_trinacional/ANCILLARY_DATA/RASTER/regions',
+            landsatMaskAsset: 'projects/mapbiomas-workspace/AUXILIAR/landsat-mask',
+            grids: 'projects/mapbiomas_af_trinacional/ANCILLARY_DATA/VECTOR/Cartas_BA_col2_v2',
+            regionsList: [
+                'AFTN',
+            ]
+        }
+    },
+    {
+        label: 'Brazil',
+        value: {
+            projectName: 'mapbiomas-brazil',
+            outputAsset: 'projects/nexgenmap/MapBiomas2/LANDSAT/mosaics-revised',
+            regionsAsset: 'projects/mapbiomas-workspace/AUXILIAR/RASTER/regions',
+            landsatMaskAsset: 'projects/mapbiomas-workspace/AUXILIAR/landsat-mask',
+            regionsList: [
+                'AMAZONIA',
+                'CAATINGA',
+                'CERRADO',
+                'MATAATLANTICA',
+                'PAMPA',
+                'PANTANAL'
+            ]
+        }
+    },
+    {
+        label: 'Indonesia',
+        value: {
+            projectName: 'mapbiomas-indonesia',
+            outputAsset: 'projects/mapbiomas-indonesia/MOSAICS/workspace-c1',
+            regionsAsset: 'projects/mapbiomas-indonesia/ANCILLARY_DATA/RASTER/regions',
+            landsatMaskAsset: 'projects/mapbiomas-workspace/AUXILIAR/landsat-mask',
+            regionsList: [
+                'REGION-100',
+                'REGION-200',
+                'REGION-300',
+                'REGION-400',
+                'REGION-500'
+            ]
+        }
+    },
+    {
+        label: 'Pampa Trinacional',
+        value: {
+            projectName: 'mapbiomas-pampa-trinacional',
+            outputAsset: 'projects/MapBiomas_Pampa/MOSAICS/mosaics_c2',
+            outputAssetBlackList: 'projects/MapBiomas_Pampa/MOSAICS/BlackList',
+            regionsAsset: 'projects/mapbiomas-workspace/AUXILIAR/RASTER/regions',
+            landsatMaskAsset: 'projects/mapbiomas-workspace/AUXILIAR/landsat-mask',
+            grids: 'projects/MapBiomas_Pampa/ANCILLARY_DATA/CartasPampaTrinacional_col2', // Banchero
+            
+            regionsList: [
+                'PAMPA-ARGENTINA-2',
+                'PAMPA-BRASIL-2',
+                'PAMPA-URUGUAY-2',
+            ]
+        }
+    },
+    {
+        label: 'Chaco',
+        value: {
+            projectName: 'mapbiomas-pampa-trinacional',//'mapbiomas-chaco',
+            outputAsset: 'projects/mapbiomas-chaco/COLECCION-3/MOSAICS/workspace-c3',
+            regionsAsset: 'projects/mapbiomas-chaco/COLECCION-3/ANCILLARY_DATA/RASTER/regions',
+            landsatMaskAsset: 'projects/mapbiomas-chaco/DATOS_AUXILIARES/landsat-mask',
+            outputAssetBlackList: 'projects/mapbiomas-chaco/COLECCION-3/MOSAICS/BlackList',
+            grids: 'projects/mapbiomas-chaco/BASE/cartas-chaco-col-3', // Banchero
+            regionsList: [
+                'chaco',
+            ]
+        }
+    }
+];
+
+var App = {
+
+    options: {
+
+        dates: {
+            amp: {
+                t0: '2010-01-01',
+                t1: '2010-12-31'
+            },
+            med: {
+                t0: '2010-05-01',
+                t1: '2010-10-30'
+            },
+
+        },
+        
+        montht0: '01',
+        
+        montht1: '12',
+
+        collection: null,
+
+        mosaic: null,
+
+        version: 8,
+
+        gridName: 'SH-21-Y-B',
+
+        cloudCover: 90,
+
+        region: null,
+
+        landsatMask: null,
+
+        regionId: null,
+
+        buffer: 100,
+
+        assets: {
+            // 'grids': 'projects/MapBiomas_Pampa/ANCILLARY_DATA/CartasPampaTrinacional_col2',
+            //'grids': 'projects/mapbiomas-chaco/BASE/cartas-chaco-col-3',
+            grids: null  // Banchero
+        },
+        
+        projectInfo: null,
+
+        blackList: [],
+
+        imageList: [],
+
+        thumbnailList: [],
+
+        thumbnail: {
+            width: 200,
+            borderStyle: '4px solid rgba(97, 97, 97, 0.05)',
+
+            colors: {
+                cyan: '#24C1E0',
+                background: '#eb9834',
+                gray: '#F8F9FA'
+            },
+
+            labelStyle: {
+                fontWeight: '50',
+                textAlign: 'center',
+                fontSize: '11px',
+                backgroundColor: '#f2f2f2',
+                stretch: 'horizontal',
+            },
+
+        },
+
+        collectionid: '',
+
+        collectionIds: {
+            'Landsat-4 SR': [
+                'LANDSAT/LT04/C01/T1_SR'
+            ],
+            'Landsat-5 SR': [
+                //'LANDSAT/LT05/C01/T1_SR'
+                'LANDSAT/LT05/C02/T1_L2'
+            ],
+            'Landsat-7 SR': [
+                //LANDSAT/LE07/C01/T1_SR'
+                'LANDSAT/LE07/C02/T1_L2'
+            ],
+            'Landsat-8 SR': [
+                //'LANDSAT/LC08/C01/T1_SR'
+                'LANDSAT/LC08/C02/T1_L2'
+            ],
+            // 'Landsat-5 SR [+L7]': [
+            //     'LANDSAT/LT05/C01/T1_SR',
+            //     'LANDSAT/LE07/C01/T1_SR'
+            // ],
+            // 'Landsat-7 SR [+L5]': [
+            //     'LANDSAT/LE07/C01/T1_SR',
+            //     'LANDSAT/LT05/C01/T1_SR'
+            // ],
+
+        },
+
+        endmembers: {
+            'Landsat-4 SR': sma.endmembers['landsat-4'],
+            'Landsat-5 SR': sma.endmembers['landsat-5'],
+            'Landsat-7 SR': sma.endmembers['landsat-7'],
+            'Landsat-8 SR': sma.endmembers['landsat-8'],
+            'Landsat-5 SR [+L7]': sma.endmembers['landsat-5'],
+            'Landsat-7 SR [+L5]': sma.endmembers['landsat-7'],
+        },
+
+        bqaValue: {
+            'Landsat-4 SR': ['QA_PIXEL', Math.pow(2, 3)],
+            'Landsat-5 SR': ['QA_PIXEL', Math.pow(2, 3)],
+            'Landsat-7 SR': ['QA_PIXEL', Math.pow(2, 3)],
+            'Landsat-8 SR': ['QA_PIXEL', Math.pow(2, 3)],
+            'Landsat-5 SR [+L7]': ['QA_PIXEL', Math.pow(2, 3)],
+            'Landsat-7 SR [+L5]': ['QA_PIXEL', Math.pow(2, 3)],
+        },
+
+        bandIds: {
+            'LANDSAT/LT04/C01/T1_SR': 'l4',
+            'LANDSAT/LT05/C02/T1_L2': 'l5',
+            'LANDSAT/LE07/C02/T1_L2': 'l7',
+            'LANDSAT/LC08/C02/T1_L2': 'l8',
+        },
+
+        lastMonthDay: {
+            '01': '31',
+            '02': '28',
+            '03': '31',
+            '04': '30',
+            '05': '31',
+            '06': '30',
+            '07': '31',
+            '08': '31',
+            '09': '30',
+            '10': '31',
+            '11': '30',
+            '12': '31'
+        },
+
+        visParams: {
+            bands: 'swir1,nir,red',
+            gain: [0.08, 0.06, 0.2],   
+            gamma: 0.85
+        },
+
+    },
+
+    init: function () {
+
+        App.ui.init();
+        //App.loadFeatures(); // Banchero
+
+    },
+
+    loadFeatures: function () {
+
+        App.options.features = ee.FeatureCollection(App.options.assets.grids);
+
+    },
+
+    applyScaleFactors : function (image) {
+      var opticalBands = image.select('SR_B.').multiply(0.0000275).add(-0.2).multiply(10000);
+      var thermalBand = 
+          ee.Algorithms.If(
+          ee.String(image.get('SENSOR_ID')).compareTo('TM').eq(0), 
+              image.select('ST_B6').multiply(0.00341802).add(149.0).multiply(10),  //Op1
+              ee.Algorithms.If(ee.String(image.get('SENSOR_ID')).compareTo('ETM').eq(0), 
+                  image.select('ST_B6').multiply(0.00341802).add(149.0).multiply(10),  // Op2
+                  image.select('ST_B10').multiply(0.00341802).add(149.0).multiply(10))) // Op3
+          
+      return image.addBands(opticalBands, null, true)
+           .addBands(thermalBand, null, true).int16()
+           .copyProperties(image)
+           .copyProperties(image,['system:time_start'])
+           .copyProperties(image,['system:index'])
+           .copyProperties(image,['system:footprint'])
+    },  
+    applyCloudAndSahdowMask: function (collection) {
+
+        var collectionWithMasks = csm.getMasks({
+            'collection': collection,
+            'cloudBQA': true,    // cloud mask using pixel QA
+            'cloudScore': false,  // cloud mas using simple cloud score
+            'shadowBQA': true,   // cloud shadow mask using pixel QA
+            'shadowTdom': false,  // cloud shadow using tdom
+            'zScoreThresh': -1,
+            'shadowSumThresh': 4000,
+            'dilatePixels': 4,
+            'cloudHeights': [200, 700, 1200, 1700, 2200, 2700, 3200, 3700, 4200, 4700],
+            'cloudBand': 'cloudBQAMask' //'cloudScoreMask' or 'cloudBQAMask'
+        });
+
+        // get collection without clouds
+        var collectionWithoutClouds = collectionWithMasks.map(
+            function (image) {
+                return image.mask(
+                    image.select([
+                        'cloudBQAMask',
+                        //'cloudScoreMask',
+                        'shadowBQAMask',
+                        //'shadowTdomMask'
+                    ]).reduce(ee.Reducer.anyNonZero()).eq(0)
+                );
+                
+            }
+        );
+
+        return collectionWithoutClouds;
+    },
+
+    applyRegionMask: function (image) {
+
+        return image.mask(App.options.region.gte(0)).selfMask();
+    },
+
+    getGeometries: function () {
+
+        App.options.geometry = App.options.features
+            .filterMetadata('grid_name', 'equals', App.options.gridName)
+            .geometry();
+
+    },
+
+    setProperties: function (mosaic) {
+
+        return mosaic
+            .set('year', App.options.year)
+            .set('region', App.options.regionId)
+            .set('collection_id', App.options.collectionid)
+            .set('grid_name', App.options.gridName)
+            .set('cloudCover', App.options.cloudCover)
+            .set('black_list', App.options.blackList.join(','))
+            .set('image_list', App.options.imageList.join(','));
+    },
+   
+    processCollection: function (collectionid) {
+
+        var spectralBands = ['blue', 'red', 'green', 'nir', 'swir1', 'swir2'];
+
+        var objLandsat = {
+            'collectionid': collectionid,
+            'geometry': App.options.geometry,
+            'dateStart': App.options.dates.amp.t0,
+            'dateEnd': App.options.dates.amp.t1,
+            'cloudCover': App.options.cloudCover,
+        };
+
+        var bands = bns.get(App.options.bandIds[collectionid]);
+
+        var collection = col.getCollection(objLandsat)
+        
+        print('antes',collection.first())
+        
+        collection = collection.map(App.applyScaleFactors)
+        print('depois',collection.first())
+        collection = collection.select(bands.bandNames, bands.newNames)
+            .filter(ee.Filter.inList('system:index', App.options.blackList).not());
+
+        collection = App.applyCloudAndSahdowMask(collection)
+            .select(spectralBands);
+
+        //collection = collection.map(App.applyRegionMask);
+        
+       collection = collection.map(function (image) {
+          return image.mask(ee.Image(1).clip(image.geometry().buffer(-5000))).selfMask();
+       }),
+
+        
+        // apply SMA
+        collection = collection.map(
+            function (image) {
+                return sma.getFractions(image,
+                    App.options.endmembers[App.options.collectionid]);
+            }
+        );
+
+        // calculate SMA indexes        
+        collection = collection
+            .map(sma.getNDFI)
+            .map(sma.getSEFI)
+            .map(sma.getWEFI)
+            .map(sma.getFNS);
+
+        // calculate Spectral indexes        
+        collection = collection
+            .map(ind.getCAI)
+            .map(ind.getEVI2)
+            .map(ind.getGCVI)
+            .map(ind.getHallCover)
+            .map(ind.getHallHeigth)
+            .map(ind.getNDVI)
+            .map(ind.getNDWI)
+            .map(ind.getPRI)
+            .map(ind.getSAVI);
+
+        return collection;
+    },
+
+    makeMosaic: function () {
+
+        App.options.collection = App.processCollection(
+            App.options.collectionIds[App.options.collectionid][0]);
+
+        var mosaic = mos.getMosaic({
+            'collection': App.options.collection,
+            'dateStart': App.options.dates.med.t0,
+            'dateEnd': App.options.dates.med.t1,
+            'bandReference': 'ndvi',
+            'percentileDry': 25,
+            'percentileWet': 75,
+        });
+
+        print(mosaic);
+
+        // Unmask data with the secondary mosaic (+L5 or +L7)
+        if (App.options.collectionIds[App.options.collectionid].length == 2) {
+            var collection = App.processCollection(
+                App.options.collectionIds[App.options.collectionid][1]);
+
+            var secondaryMosaic = mos.getMosaic({
+                'collection': collection,
+                'dateStart': App.options.dates.med.t0,
+                'dateEnd': App.options.dates.med.t1,
+                'bandReference': 'ndvi',
+                'percentileDry': 25,
+                'percentileWet': 75,
+            });
+
+            mosaic = mosaic.unmask(secondaryMosaic);
+
+            App.options.collection = App.options.collection.merge(collection);
+        }
+
+        // get other bands
+        mosaic = mis.getSlope(mosaic);
+        mosaic = mis.getEntropyG(mosaic);
+
+        // set band data types
+        App.options.mosaic = dtp.setBandTypes(mosaic, App.options.projectInfo.projectName);
+
+        // set mosaic properties
+        App.options.mosaic = App.setProperties(App.options.mosaic)
+            .clip(
+                App.options.geometry
+                    .buffer(App.options.buffer)
+                    .bounds()
+            );
+
+    },
+
+    exportMosaic: function () {
+
+        var name = [
+            App.options.regionId,
+            App.options.gridName,
+            App.options.dates.med.t0.split('-')[0],
+            App.options.version
+        ].join('-');
+
+        Export.image.toAsset({
+            "image": App.options.mosaic,
+            "description": name,
+            "assetId": App.options.projectInfo.outputAsset + '/' + name,
+            "region": App.options.geometry.buffer(App.options.buffer).bounds(),
+            "scale": 30,
+            "maxPixels": 1e13
+        });
+
+    },
+    exportBlackList: function(){
+      var bl_export = ee.List(App.options.blackList).map(function(i){
+        return ee.Feature(ee.Geometry.Point([0,0]),{}).set({
+          regionID: App.options.regionId,
+          name: i,
+          year: App.options.dates.med.t0.split('-')[0],
+          grid_name: App.options.gridName
+          
+        })
+      })
+      
+      var name = [
+            App.options.regionId,
+            App.options.gridName,
+            App.options.dates.med.t0.split('-')[0],
+            App.options.version
+        ].join('-');
+      
+      print(bl_export)
+      
+      Export.table.toAsset({
+            "collection": ee.FeatureCollection(bl_export),
+            "description": name,
+            "assetId": App.options.projectInfo.outputAssetBlackList + '/' + name,
+            
+        });
+      
+    },
+
+    ui: {
+
+        init: function () {
+
+            App.ui.form.init();
+
+        },
+
+        reset: function () {
+
+            App.options.blackList = [];
+            App.options.imageList = [];
+
+            App.ui.form.map.clear();
+        },
+
+        updateRegionList: function () {
+
+            App.ui.form.panelFilterContainer.remove(App.ui.form.selectRegion);
+
+            App.options.region = null;
+
+            App.ui.form.selectRegion = ui.Select({
+                'items': ['None'].concat(App.options.projectInfo.regionsList),
+                'onChange': function (region) {
+                    App.options.regionId = region;
+                    App.options.region = ee.Image(
+                    App.options.projectInfo.regionsAsset + '/' + App.options.regionId);
+                    App.options.landsatMask = ee.ImageCollection(App.options.projectInfo.landsatMaskAsset);
+                    
+                    App.options.assets.grids = App.options.projectInfo.grids // Banchero
+                    App.loadFeatures(); // Banchero
+
+                },
+                'placeholder': 'Select a region',
+                'style': {
+                    'stretch': 'horizontal',
+                }
+            });
+
+            App.ui.form.panelFilterContainer.insert(5, App.ui.form.selectRegion);
+        },
+
+        getDates: function () {
+
+            App.options.dates.amp.t0 = App.options.year + '-01-01';
+            App.options.dates.amp.t1 = App.options.year + '-12-31';
+
+            App.options.dates.med.t0 = App.options.year + '-' + App.options.montht0 + '-01'// + App.options.lastMonthDay[App.options.montht0];
+            //App.options.dates.med.t0 = App.options.year + '-' + App.options.montht0  + App.options.lastMonthDay[App.options.montht0]
+            App.options.dates.med.t1 = App.options.year + '-' + App.options.montht1 + '-' + App.options.lastMonthDay[App.options.montht1];
+
+        },
+
+        addMosaicToMap: function () {
+
+            App.ui.form.map.clear();
+
+            App.ui.form.map.addLayer(App.options.mosaic, {
+                'bands': 'swir1_median,nir_median,red_median',
+                'gain': App.options.visParams.gain,
+                'gamma': App.options.visParams.gamma
+            }, 'Mosaic');
+
+            App.ui.form.map.addLayer(
+                ee.FeatureCollection(App.options.geometry).style({
+                    'color': 'ff0000',
+                    'fillColor': 'ff000000',
+                }),
+                {
+                    'opacity': 0.7,
+                }, 'Grid',
+                false
+            );
+
+            App.ui.form.map.addLayer(App.options.landsatMask.sum(), {
+                'min': 0,
+                'max': 4,
+                'palette': 'ffcccc,ff0000',
+                'opacity': 0.2
+            }, 'Scenes',
+                false
+            );
+
+            App.ui.form.map.centerObject(App.options.geometry, 9);
+
+            print("blackList: ", App.options.blackList);
+        },
+
+        findImages: function () {
+
+            App.ui.reset();
+
+            App.ui.getDates();
+
+            App.getGeometries();
+
+            // App.getCollectionCloudMask();
+
+            App.makeMosaic();
+
+            App.ui.loadImagesSelector();
+
+            App.ui.addMosaicToMap();
+
+        },
+
+        selectAll: function () {
+
+            App.options.thumbnailList.forEach(
+                function (thumbnailContainer) {
+                    thumbnailContainer.checkbox.setValue(true, App.ui.updateImageList);
+                }
+            );
+
+            print("blackList:", App.options.blackList);
+
+        },
+
+        unselectAll: function () {
+
+            App.options.thumbnailList.forEach(
+                function (thumbnailContainer) {
+                    thumbnailContainer.checkbox.setValue(false, App.ui.updateImageList);
+                }
+            );
+
+            print("blackList:", App.options.blackList);
+        },
+
+        updateImageList: function (checked, checkbox) {
+
+            var fun = function (imageName) {
+                return imageName !== checkbox.imageName;
+            };
+
+            if (checked) {
+                App.options.blackList = App.options.blackList.filter(fun);
+                App.options.imageList.push(checkbox.imageName);
+            } else {
+                App.options.imageList = App.options.imageList.filter(fun);
+                App.options.blackList.push(checkbox.imageName);
+            }
+
+        },
+
+        makeThumbnailGrid: function () {
+            return ui.Panel({
+                layout: ui.Panel.Layout.flow('horizontal', true),
+                style: {
+                    stretch: 'vertical',
+                    // backgroundColor: App.options.thumbnail.colors.background,
+                }
+            });
+        },
+
+        makeThumbnail: function (obj) {
+
+            var thumbnailContainer = ui.Panel({
+                "layout": ui.Panel.Layout.flow('vertical'),
+                "style": {
+                    // backgroundColor: App.options.thumbnail.colors.background,
+                    border: App.options.thumbnail.borderStyle,
+                    padding: '4px',
+                    margin: '5px',
+                    width: App.options.thumbnail.width + 35 + 'px',
+                },
+            });
+
+            var image = ee.Image(App.options.collection
+                .filterMetadata('image_id', 'equals', obj.imageName).first());
+
+            var thumbnail = ui.Thumbnail({
+                "image": image.visualize(App.options.visParams),
+                "params": {
+                    "dimensions": App.options.thumbnail.width,
+                    "format": 'png'
+                },
+                "style": {
+                    "width": App.options.thumbnail.width + 'px',
+                    "maxHeight": App.options.thumbnail.width + 25 + 'px',
+                    "backgroundColor": App.options.thumbnail.colors.background,
+                }
+            });
+
+            thumbnailContainer.add(thumbnail);
+
+            // Add the checkbox to specify which thumbnails to include in the mosaic.
+            var checkbox = ui.Checkbox({
+                "label": obj.imageName,
+                "value": true,
+                "onChange": App.ui.updateImageList,
+                // "disabled": false,
+                "style": App.options.thumbnail.labelStyle
+            });
+
+            checkbox.imageName = obj.imageName;
+
+            thumbnailContainer.add(checkbox);
+
+            thumbnailContainer.checkbox = checkbox;
+
+            return thumbnailContainer;
+        },
+
+        loadImagesSelector: function () {
+
+            var thumbnailGrid = App.ui.makeThumbnailGrid();
+
+            App.options.imageList = ee.List(
+                App.options.collection
+                    .filterDate(App.options.dates.med.t0, App.options.dates.med.t1)
+                    .reduceColumns(ee.Reducer.toList(), ['image_id'])
+                    .get('list'));
+
+            App.options.thumbnailList = [];
+
+            App.ui.loadingMsg.show();
+
+            App.options.imageList.evaluate(
+                function (imageList) {
+
+                    imageList.forEach(
+                        function (imageName) {
+
+                            var thumbnail = App.ui.makeThumbnail({
+                                'imageName': imageName,
+                            });
+
+                            App.options.thumbnailList.push(thumbnail);
+
+                            thumbnailGrid.add(thumbnail);
+                        }
+                    );
+
+                    App.options.imageList = imageList;
+
+                    App.ui.loadingMsg.destroy();
+                }
+            );
+
+            App.ui.form.panelImagePicker.clear();
+
+            App.ui.form.panelImagePicker.add(thumbnailGrid);
+        },
+
+        loadingMsg: {
+
+            show: function () {
+                App.ui.form.panelImagePickerContainer.add(App.ui.form.msgBox);
+            },
+
+            destroy: function () {
+                App.ui.form.panelImagePickerContainer.remove(App.ui.form.msgBox);
+            }
+
+        },
+
+
+        form: {
+
+            init: function () {
+
+                App.ui.form.panelFilterContainer.add(App.ui.form.labelTitleFilter);
+                App.ui.form.panelFilterContainer.add(App.ui.form.panelDiv1);
+                App.ui.form.panelFilterContainer.add(App.ui.form.labelProject);
+                App.ui.form.panelFilterContainer.add(App.ui.form.selectProject);
+                App.ui.form.panelFilterContainer.add(App.ui.form.labelRegion);
+                App.ui.form.panelFilterContainer.add(App.ui.form.selectRegion);
+                App.ui.form.panelFilterContainer.add(App.ui.form.labelCollection);
+                App.ui.form.panelFilterContainer.add(App.ui.form.selectCollection);
+                App.ui.form.panelFilterContainer.add(App.ui.form.labelDates);
+                App.ui.form.panelFilterContainer.add(App.ui.form.selectYear);
+                App.ui.form.panelFilterContainer.add(App.ui.form.selectMontht0);
+                App.ui.form.panelFilterContainer.add(App.ui.form.selectMontht1);
+                App.ui.form.panelFilterContainer.add(App.ui.form.labelCloudCover);
+                App.ui.form.panelFilterContainer.add(App.ui.form.textCloudCover);
+                App.ui.form.panelFilterContainer.add(App.ui.form.labelGridName);
+                App.ui.form.panelFilterContainer.add(App.ui.form.textGridName);
+                App.ui.form.panelFilterContainer.add(App.ui.form.buttonFind);
+
+                App.ui.form.panelImagePickerContainer.add(App.ui.form.labelTitle);
+                App.ui.form.panelImagePickerContainer.add(App.ui.form.panelDiv2);
+                App.ui.form.panelImagePickerContainer.add(App.ui.form.panelImagePicker);
+
+                App.ui.form.panelMapContainer.add(App.ui.form.panelControl);
+                App.ui.form.panelMapContainer.add(App.ui.form.map);
+
+                App.ui.form.panelControl.add(App.ui.form.buttonSelectAll);
+                App.ui.form.panelControl.add(App.ui.form.buttonUnselectAll);
+                App.ui.form.panelControl.add(App.ui.form.buttonMakeMosaic);
+                App.ui.form.panelControl.add(App.ui.form.buttonExportMosaic);
+                App.ui.form.panelControl.add(App.ui.form.buttonExportBlackList); // SB
+
+                App.ui.form.panelMain.add(App.ui.form.panelFilterContainer);
+                App.ui.form.panelMain.add(App.ui.form.panelDiv3);
+                App.ui.form.panelMain.add(App.ui.form.panelImagePickerContainer);
+                App.ui.form.panelMain.add(App.ui.form.panelMapContainer);
+
+                ui.root.widgets().reset([App.ui.form.panelMain]);
+            },
+
+            panelMain: ui.Panel({
+                'layout': ui.Panel.Layout.flow('horizontal'),
+                'style': {
+                    'stretch': 'both'
+                }
+            }),
+
+            panelImagePickerContainer: ui.Panel({
+                'layout': ui.Panel.Layout.flow('vertical'),
+                'style': {
+                    'stretch': 'both'
+                }
+            }),
+
+            panelMapContainer: ui.Panel({
+                'layout': ui.Panel.Layout.flow('vertical'),
+                'style': {
+                    'stretch': 'both'
+                }
+            }),
+
+            panelFilterContainer: ui.Panel({
+                'layout': ui.Panel.Layout.flow('vertical'),
+                'style': {
+                    'stretch': 'vertical',
+                }
+            }),
+
+            panelImagePicker: ui.Panel({
+                'layout': ui.Panel.Layout.flow('vertical'),
+                'style': {
+                    'stretch': 'both',
+                }
+            }),
+
+            panelControl: ui.Panel({
+                'layout': ui.Panel.Layout.flow('horizontal'),
+                'style': {
+                    'stretch': 'horizontal',
+                }
+            }),
+
+            panelDiv1: ui.Panel({
+                'layout': ui.Panel.Layout.flow('horizontal'),
+                'style': {
+                    'stretch': 'horizontal',
+                    'border': '1px solid rgba(97, 97, 97, 0.05)',
+                }
+            }),
+
+            panelDiv2: ui.Panel({
+                'layout': ui.Panel.Layout.flow('horizontal'),
+                'style': {
+                    'stretch': 'horizontal',
+                    'border': '1px solid rgba(97, 97, 97, 0.05)',
+                }
+            }),
+
+            panelDiv3: ui.Panel({
+                'layout': ui.Panel.Layout.flow('vertical'),
+                'style': {
+                    'stretch': 'vertical',
+                    'border': '1px solid rgba(97, 97, 97, 0.05)',
+                }
+            }),
+
+            selectCollection: ui.Select({
+                'items': [
+                    'Landsat-4 SR',
+                    'Landsat-5 SR',
+                    'Landsat-7 SR',
+                    'Landsat-8 SR',
+                    // 'Landsat-5 SR [+L7]',
+                    // 'Landsat-7 SR [+L5]',
+                ],
+                'placeholder': 'Collection',
+                'onChange': function (collectionid) {
+                    App.options.collectionid = collectionid;
+                },
+                'style': {
+                    'stretch': 'horizontal',
+                }
+            }),
+
+            selectYear: ui.Select({
+                'items': [
+                    '1985', '1986', '1987', '1988',
+                    '1989', '1990', '1991', '1992',
+                    '1993', '1994', '1995', '1996',
+                    '1997', '1998', '1999', '2000',
+                    '2001', '2002', '2003', '2004',
+                    '2005', '2006', '2007', '2008',
+                    '2009', '2010', '2011', '2012',
+                    '2013', '2014', '2015', '2016',
+                    '2017', '2018', '2019', '2020',
+                    '2021'
+                ],
+                'placeholder': 'Year',
+                'onChange': function (year) {
+                    App.options.year = year;
+                },
+                'style': {
+                    'stretch': 'horizontal',
+                }
+            }),
+
+            selectMontht0: ui.Select({
+                'items': [
+                    '01', '02', '03', '04',
+                    '05', '06', '07', '08',
+                    '09', '10', '11', '12',
+                ],
+                'placeholder': 'Month t0',
+                'onChange': function (month) {
+                    App.options.montht0 = month;
+                },
+                'style': {
+                    'stretch': 'horizontal',
+                }
+            }),
+
+            selectMontht1: ui.Select({
+                'items': [
+                    '01', '02', '03', '04',
+                    '05', '06', '07', '08',
+                    '09', '10', '11', '12',
+                ],
+                'placeholder': 'Month t1',
+                'onChange': function (month) {
+                    App.options.montht1 = month;
+                },
+                'style': {
+                    'stretch': 'horizontal',
+                }
+            }),
+
+            buttonFind: ui.Button({
+                'label': 'Find images',
+                'onClick': function () {
+                    App.ui.findImages();
+                },
+                'style': {
+                    'stretch': 'horizontal',
+                }
+            }),
+
+            buttonSelectAll: ui.Button({
+                'label': 'Select all',
+                'onClick': function () {
+                    App.ui.selectAll();
+                },
+                'style': {
+                    'stretch': 'vertical',
+                    'width': '100px'
+                }
+            }),
+
+            buttonUnselectAll: ui.Button({
+                'label': 'Unselect all',
+                'onClick': function () {
+                    App.ui.unselectAll();
+                },
+                'style': {
+                    'stretch': 'vertical',
+                    'width': '100px'
+                }
+            }),
+
+            buttonMakeMosaic: ui.Button({
+                'label': 'Mosaic',
+                'onClick': function () {
+                    App.makeMosaic();
+                    App.ui.addMosaicToMap();
+                },
+                'style': {
+                    'stretch': 'vertical',
+                    'width': '100px'
+                }
+            }),
+
+            buttonExportMosaic: ui.Button({
+                'label': 'Export',
+                'onClick': function () {
+                    App.makeMosaic();
+                    App.exportMosaic();
+                },
+                'style': {
+                    'stretch': 'vertical',
+                    'width': '100px'
+                }
+            }),
+            
+            buttonExportBlackList: ui.Button({ // SB
+                'label': 'Export BL',
+                'onClick': function () {
+                    App.exportBlackList();
+                },
+                'style': {
+                    'stretch': 'vertical',
+                    'width': '100px'
+                }
+            }),
+
+            labelTitleFilter: ui.Label({
+                "value": "Filter",
+                "style": {
+                    "fontSize": "24px",
+                    "fontWeight": "bold",
+                    // 'border': '1px solid #cccccc',
+                    'stretch': 'horizontal',
+                    // 'padding': '4px'
+                }
+            }),
+
+            labelTitle: ui.Label({
+                "value": "Image Galery",
+                "style": {
+                    "fontSize": "24px",
+                    "fontWeight": "bold",
+                    // 'border': '1px solid #cccccc',
+                    'stretch': 'horizontal',
+                    // 'padding': '4px'
+                }
+            }),
+
+            labelProject: ui.Label({
+                "value": "Project:",
+                "style": {
+                    'stretch': 'horizontal',
+                }
+            }),
+
+            labelRegion: ui.Label({
+                "value": "Region:",
+                "style": {
+                    'stretch': 'horizontal',
+                }
+            }),
+
+            labelDates: ui.Label({
+                "value": "Date range:",
+                "style": {
+                    'stretch': 'horizontal',
+                }
+            }),
+
+            labelDatesMedian: ui.Label({
+                "value": "Median date range:",
+                "style": {
+                    'stretch': 'horizontal',
+                }
+            }),
+
+            labelCollection: ui.Label({
+                "value": "Collection id:",
+                "style": {
+                    'stretch': 'horizontal',
+                }
+            }),
+
+            labelCloudCover: ui.Label({
+                "value": "Cloud Cover:",
+                "style": {
+                    'stretch': 'horizontal',
+                }
+            }),
+
+            textCloudCover: ui.Textbox({
+                'placeholder': '90',
+                'onChange': function (text) {
+                    App.options.cloudCover = parseFloat(text);
+                    print(App.options.cloudCover);
+                },
+            }),
+
+            labelGridName: ui.Label({
+                "value": "Grid Name:",
+                "style": {
+                    'stretch': 'horizontal',
+                }
+            }),
+
+            textGridName: ui.Textbox({
+                'placeholder': 'SH-21-Y-B',
+                'onChange': function (text) {
+                    App.options.gridName = text;
+                },
+            }),
+
+            selectProject: ui.Select({
+                'items': projectInfo,
+                'onChange': function (item) {
+                    App.options.projectInfo = item;
+                    App.ui.updateRegionList();
+                },
+                'placeholder': 'Select a project',
+                'style': {
+                    'stretch': 'horizontal',
+                }
+            }),
+
+            selectRegion: ui.Select({
+                'items': ['None'],
+                'onChange': function (region) {
+                },
+                'placeholder': 'Select a region',
+                'style': {
+                    'stretch': 'horizontal',
+                    // 'width': '150px'
+                }
+            }),
+
+            map: ui.Map({
+                'style': {
+                    'stretch': 'both'
+                }
+            }),
+
+            msgBox: ui.Panel(
+                {
+                    'widgets': [
+                        ui.Label('Loading...')
+                    ],
+                    'layout': ui.Panel.Layout.flow('horizontal'),
+                    'style': {
+                        'position': 'top-left'
+                    }
+                }
+            )
+        }
+    }
+};
+
+App.init();
